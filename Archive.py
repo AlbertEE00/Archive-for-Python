@@ -1,6 +1,6 @@
 #!/usr/bin/python -u
-#
-# Archive library
+# Archive wrapping library for python to work with archives
+# Copyright (C) 2022  Albert van Zyl
 #
 # This library is free software; you can redistribute it and/or
 # modify it under the terms of the GNU Lesser General Public
@@ -14,13 +14,13 @@
 #
 # You should have received a copy of the GNU Lesser General Public
 # License along with this library; if not, write to the Free Software
-# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
-#
-#
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301
+# USA
 
 import argparse
 import os
 import pathlib
+
 
 
 def get_file_name(filepath: str | os.path(), ext: bool) -> str:
