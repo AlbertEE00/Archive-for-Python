@@ -1,22 +1,26 @@
-import rarfile
-import pathlib
-import csv
-from fileinput import filename
-import gzip
-from msilib.schema import Directory
-from operator import eq
-import zipfile
-import sys
-import os
-import rarfile
-import pathlib
-import py7zr
-import regex as re
-import shutil
-import time
+#!/usr/bin/python -u
+#
+# Archive library
+#
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 2.1 of the License, or (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public
+# License along with this library; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+#
+#
+
 import argparse
-from typing import Optional
-from typing import List
+import os
+import pathlib
 
 
 def get_file_name(filepath: str | os.path(), ext: bool) -> str:
@@ -24,7 +28,7 @@ def get_file_name(filepath: str | os.path(), ext: bool) -> str:
 
     Args:
         filepath (str | os.path): full path to file or relative to script.
-        ext (bool): wether to return with extension.
+        ext (bool): whether to return with extension.
 
     Returns:
         str: name of the file with or without extension.
