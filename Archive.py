@@ -196,7 +196,7 @@ class ArchiveFile:
 
         self.read_contents(print_files=False, files=files, file_types=file_types, pattern=pattern, exclusive=exclusive)
         if self.file_list.__len__() == 0:
-            print(f'No files to extract from {self.full_file_path} for criteria:')
+            print(f'Criteria Mismatch: No files to extract from {self.full_file_path} for criteria:')
             if files:
                 print()
                 print('Files:')
@@ -220,7 +220,7 @@ class ArchiveFile:
                 if continuity_check in str(extract_path):
                     pass
                 else:
-                    print(f'Continuity check: {continuity_check} failed for extract path {extract_path}, exiting...')
+                    print(f'Continuity Check Fail: {continuity_check} failed for extract path {extract_path}, exiting...')
                     exit()
             exist_one_parent = False
             for parent in extract_path.parents:
@@ -237,8 +237,42 @@ class ArchiveFile:
 
         print(f'Extracting {self.full_file_path} to path: {extract_path}')
         extract_path_bkup = extract_path
+
         if files_only:
-            extract_path = tempfile.mkdtemp()
+            if rarfile.is_rarfile(self.full_file_path):
+                for i in range(self.file_list.__len__()):
+                    rarfile.RarFile(self.full_file_path).extractall(path=extract_path, members=[str(self.file_list[i])],
+                                                                    pwd=None)
+                    new_path = os.path.join(extract_path, self.file_list[i])
+                    if os.path.isfile(new_path):
+                        shutil.move(new_path, str(extract_path_bkup) + "\\" + pathlib.Path(
+                            new_path).name)  # move files to top dir
+            elif zipfile.is_zipfile(self.full_file_path):
+                for i in range(self.file_list.__len__()):
+                    zipfile.ZipFile(self.full_file_path, "r").extractall(path=extract_path, members=[str(self.file_list[i])],
+                                                                         pwd=None)
+                    new_path = os.path.join(extract_path, self.file_list[i])
+                    if os.path.isfile(new_path):
+                        shutil.move(new_path, str(extract_path_bkup) + "\\" + pathlib.Path(
+                            new_path).name)  # move files to top dir
+            elif py7zr.is_7zfile(self.full_file_path):
+                for i in range(self.file_list.__len__()):
+                    py7zr.SevenZipFile(self.full_file_path, "r").extract(path=extract_path, targets=[str(self.file_list[i])])
+                    new_path = os.path.join(extract_path, self.file_list[i])
+                    if os.path.isfile(new_path):
+                        shutil.move(new_path, str(extract_path_bkup) + "\\" + pathlib.Path(
+                            new_path).name)  # move files to top dir
+            elif check_if_gz_file(self.full_file_path):
+                with gzip.open(self.full_file_path, 'rb') as f_in:
+                    with open(str(extract_path) + "\\" + self.file_name, 'wb') as f_out:
+                        shutil.copyfileobj(f_in, f_out)
+            self.read_contents()
+            for f in self.file_list:
+                new_path = os.path.join(extract_path, f)
+                if os.path.isdir(new_path):
+                    shutil.rmtree(new_path)
+            return extract_path_bkup
+
         if rarfile.is_rarfile(self.full_file_path):
             with rarfile.RarFile(self.full_file_path) as rar:
                 rar.extractall(path=extract_path, members=self.file_list, pwd=None)
@@ -252,14 +286,7 @@ class ArchiveFile:
             with gzip.open(self.full_file_path, 'rb') as f_in:
                 with open(str(extract_path) + "\\" + self.file_name, 'wb') as f_out:
                     shutil.copyfileobj(f_in, f_out)
-        if files_only:
-            for root, dirs, files in os.walk(extract_path, topdown=True):
-                for file in files:
-                    try:
-                        print(os.path.join(root, file), " ", str(extract_path_bkup)+"\\" + pathlib.Path(file).name)
-                        shutil.move(os.path.join(root, file), str(extract_path_bkup)+"\\" + pathlib.Path(file).name)  # move files to top dir
-                    except OSError:
-                        pass
+
         return extract_path_bkup
 
 
@@ -274,10 +301,13 @@ def setup_parser():
     extract = subparser.add_parser('extract', help="extract file to specified location, if no arguments are given "
                                                    "extract all files in archive to directory with name of file in "
                                                    "the directory of the archive")
-    extract.add_argument('-d', '--destination', type=str, help="move file to specified location, if only a name is "
+    extract_group_exclusive = extract.add_mutually_exclusive_group()
+
+    extract_group_exclusive.add_argument('-d', '--destination', type=str, help="move file to specified location, if only a name is "
                                                                "given then to a folder relative to archive location")
+    extract_group_exclusive.add_argument('-cd', '--current_dir', action='store_true', help="extract to current directory")
+
     extract.add_argument('-con', '--continuity_check', type=str, help="move all files to a directory")
-    extract.add_argument('-cd', '--current_dir', action='store_true', help="extract to current directory")
     extract.add_argument('-fo', '--only_files', action='store_true', help="automatically files only to "
                                                                           "extract directory")
     extract.add_argument('-del', '--delete_archive', action='store_true',
