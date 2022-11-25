@@ -23,6 +23,7 @@ import os
 import pathlib
 import re
 import shutil
+import tempfile
 import zipfile
 from typing import List
 
@@ -91,7 +92,8 @@ def check_if_gz_file(filepath: str | pathlib.Path) -> bool:
 class ArchiveFile:
     full_file_path = pathlib.Path()
     directory_path = pathlib.Path()
-    filename = str()
+    file_name = str()
+    full_file_name = str()
     file_extension = str()
     file_list = list()
     __initState = False
@@ -101,7 +103,8 @@ class ArchiveFile:
         if os.path.exists(os.path.abspath(file_path)):
             self.full_file_path = pathlib.Path(os.path.abspath(file_path))  # get full file path
             self.directory_path = self.full_file_path.parent.absolute()
-            self.filename = self.full_file_path.with_suffix("").name
+            self.file_name = self.full_file_path.with_suffix("").name
+            self.full_file_name = self.full_file_path.name
             self.file_extension = self.full_file_path.suffix
             self.__initState = True
         else:
@@ -111,7 +114,7 @@ class ArchiveFile:
 
     def read_contents(self, print_files: bool = False, files: List[str] | None = None,
                       file_types: List[str] | None = None,
-                      pattern: List[str] | None = None):
+                      pattern: List[str] | None = None, exclusive: bool = False):
         if not self.__initState:
             return "Archive not initialized"
         if rarfile.is_rarfile(self.full_file_path):
@@ -125,7 +128,8 @@ class ArchiveFile:
             with py7zr.SevenZipFile(self.full_file_path, "r") as SevenZip:
                 self.file_list = SevenZip.getnames()
         elif check_if_gz_file(self.full_file_path):
-            self.file_list = [self.filename]
+            self.file_list = [self.file_name]
+
         new_list = list()
         if file_types or pattern or files:
             for file in self.file_list:
@@ -135,49 +139,106 @@ class ArchiveFile:
                         if f_type in get_file_extension(file):
                             append = True
                 if pattern:
-                    for search in pattern:
-                        res = re.findall(search, file)
-                        if res:
-                            append = True
+                    if exclusive:
+                        for search in pattern:
+                            res = re.findall(search, file)
+                            if res:
+                                pass
+                            else:
+                                append = False
+                                break
+                    else:
+                        for search in pattern:
+                            res = re.findall(search, file)
+                            if res:
+                                append = True
                 if files:
-                    for file_name in files:
-                        res = re.findall(file_name, file)
-                        if res:
-                            append = True
+                    if exclusive:
+                        for file_name in files:
+                            res = re.findall(file_name, file)
+                            if res:
+                                pass
+                            else:
+                                append = False
+                                break
+                    else:
+                        for file_name in files:
+                            res = re.findall(file_name, file)
+                            if res:
+                                append = True
                 if append:
                     new_list.append(file)
             self.file_list = new_list
         if print_files:
-            for file in self.file_list:
-                print(file)
+            for ffile in self.file_list:
+                print(ffile)
         return self.file_list
 
-    def extract(self, extract_path: str = None, files: List[str] | None = None, file_types: List[str] | None = None,
-                pattern: List[str] | None = None):
+    def extract(self, extract_path: str = None, files_only: bool = False, continuity_check: str = None,
+                files: List[str] | None = None, file_types: List[str] | None = None,
+                pattern: List[str] | None = None, exclusive: bool = False):
         if not self.__initState:
             return "Archive not initialized"
         # print(f'this is before: {extract_path}')
         if extract_path is not None:
             extract_path.replace("/", "\\")
             if r'\\' in extract_path:
-                print("invalid path, exiting...")
+                print(f'Invalid Extract Path: {extract_path}, exiting...')
                 exit()
         if extract_path == "":  # extract to directory with file name
             if check_if_gz_file(self.full_file_path):
-                extract_path = self.directory_path.joinpath(pathlib.Path(self.filename).with_suffix(""))
+                extract_path = self.directory_path.joinpath(pathlib.Path(self.file_name).with_suffix(""))
             else:
-                extract_path = self.directory_path.joinpath(self.filename)
-            print(extract_path)
-            extract_path.mkdir(exist_ok=True)
+                extract_path = self.directory_path.joinpath(self.file_name)
         else:
             extract_path = pathlib.Path(
                 os.path.abspath(extract_path)) if extract_path else self.directory_path  # make a full path and
+
+        self.read_contents(print_files=False, files=files, file_types=file_types, pattern=pattern, exclusive=exclusive)
+        if self.file_list.__len__() == 0:
+            print(f'No files to extract from {self.full_file_path} for criteria:')
+            if files:
+                print()
+                print('Files:')
+                for f in files:
+                    print(f)
+            if file_types:
+                print()
+                print('File types/extensions:')
+                for t in file_types:
+                    print(t)
+            if pattern:
+                print()
+                print('Search Pattern:')
+                for p in pattern:
+                    print(p)
+            print()
+            print("Exiting...")
+            exit()
+        if extract_path:
+            if continuity_check:
+                if continuity_check in str(extract_path):
+                    pass
+                else:
+                    print(f'Continuity check: {continuity_check} failed for extract path {extract_path}, exiting...')
+                    exit()
+            exist_one_parent = False
+            for parent in extract_path.parents:
+                if parent.exists():
+                    exist_one_parent = True
+                    break
+            if exist_one_parent:
+                extract_path.mkdir(exist_ok=True, parents=True)
+            else:
+                print(f'Invalid Extract Path: {extract_path}, exiting...')
         # path object
         # print(f'this is after: {extract_path}')
         # extract to directory with file name in archive directory
 
-        self.read_contents(False, files, file_types, pattern)
-
+        print(f'Extracting {self.full_file_path} to path: {extract_path}')
+        extract_path_bkup = extract_path
+        if files_only:
+            extract_path = tempfile.mkdtemp()
         if rarfile.is_rarfile(self.full_file_path):
             with rarfile.RarFile(self.full_file_path) as rar:
                 rar.extractall(path=extract_path, members=self.file_list, pwd=None)
@@ -188,11 +249,18 @@ class ArchiveFile:
             for i in range(self.file_list.__len__()):
                 py7zr.SevenZipFile(self.full_file_path, "r").extract(path=extract_path, targets=self.file_list[i])
         elif check_if_gz_file(self.full_file_path):
-
-            extract_path = str(extract_path) + "\\" + self.filename
             with gzip.open(self.full_file_path, 'rb') as f_in:
-                with open(extract_path, 'wb') as f_out:
+                with open(str(extract_path) + "\\" + self.file_name, 'wb') as f_out:
                     shutil.copyfileobj(f_in, f_out)
+        if files_only:
+            for root, dirs, files in os.walk(extract_path, topdown=True):
+                for file in files:
+                    try:
+                        print(os.path.join(root, file), " ", str(extract_path_bkup)+"\\" + pathlib.Path(file).name)
+                        shutil.move(os.path.join(root, file), str(extract_path_bkup)+"\\" + pathlib.Path(file).name)  # move files to top dir
+                    except OSError:
+                        pass
+        return extract_path_bkup
 
 
 def setup_parser():
@@ -208,13 +276,14 @@ def setup_parser():
                                                    "the directory of the archive")
     extract.add_argument('-d', '--destination', type=str, help="move file to specified location, if only a name is "
                                                                "given then to a folder relative to archive location")
+    extract.add_argument('-con', '--continuity_check', type=str, help="move all files to a directory")
     extract.add_argument('-cd', '--current_dir', action='store_true', help="extract to current directory")
-    extract.add_argument('-mat', '--move_all_to', type=str, help="move all files to a directory")
-    extract.add_argument('-matad', '--move_all_to_archive_dir', action='store_true', help="automatically move to "
-                                                                                          "archive directory")
+    extract.add_argument('-fo', '--only_files', action='store_true', help="automatically files only to "
+                                                                          "extract directory")
     extract.add_argument('-del', '--delete_archive', action='store_true',
                          help="automatically delete archive after extraction")
 
+    extract.add_argument('-x', '--exclusive', action='store_true', help="extract with exclusive settings")
     extract.add_argument('-t', '--type', action='append', help="extract only types specified, appended with each -t")
     extract.add_argument('-f', '--files', action='append', help="extract only files specified, appended with each -f")
     extract.add_argument('-s', '--search', action='append', help="extract only matches to search specified, appended "
@@ -226,6 +295,7 @@ def setup_parser():
                                                                "name is "
                                                                "given then to a folder relative to archive location")
     view = subparser.add_parser('view', help="shows contents of archive")
+    view.add_argument('-x', '--exclusive', action='store_true', help="view with exclusive settings")
     view.add_argument('-t', '--type', action='append', help="view only types specified, appended with each -t")
     view.add_argument('-f', '--files', action='append', help="view only files specified, appended with each -f")
     view.add_argument('-s', '--search', action='append',
@@ -238,7 +308,7 @@ def setup_parser():
 if __name__ == "__main__":
     args = setup_parser()
     if args.command == "view":
-        ArchiveFile(args.file_path).read_contents(args.view, args.files, args.type, args.search)
+        ArchiveFile(args.archive_path).read_contents(True, args.files, args.type, args.search, args.exclusive)
     elif args.command == "extract":
         archive = ArchiveFile(args.archive_path)
         destination_dir = ""
@@ -248,8 +318,13 @@ if __name__ == "__main__":
             destination_dir = args.destination
         else:
             destination_dir = ""
-        archive.extract(extract_path=destination_dir, files=args.files, file_types=args.type, pattern=args.search)
-        pass
+        temp_des_dir = destination_dir
+        final_path = archive.extract(extract_path=destination_dir, files_only=args.only_files, files=args.files,
+                                     file_types=args.type, pattern=args.search, exclusive=args.exclusive,
+                                     continuity_check=args.continuity_check)
+
+        if args.delete_archive:
+            os.remove(args.archive_path)
     elif args.command == "move":
         pass
     else:
