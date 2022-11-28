@@ -1,2 +1,5 @@
 py7zr
 rarfile
+argparse
+regex
+Semi-ATE-STDF

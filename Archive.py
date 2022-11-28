@@ -99,7 +99,6 @@ class ArchiveFile:
     __initState = False
 
     def __init__(self, file_path):
-        file_path.replace("/", "\\")
         if os.path.exists(os.path.abspath(file_path)):
             self.full_file_path = pathlib.Path(os.path.abspath(file_path))  # get full file path
             self.directory_path = self.full_file_path.parent.absolute()
@@ -180,8 +179,8 @@ class ArchiveFile:
         if not self.__initState:
             return "Archive not initialized"
         # print(f'this is before: {extract_path}')
+
         if extract_path is not None:
-            extract_path.replace("/", "\\")
             if r'\\' in extract_path:
                 print(f'Invalid Extract Path: {extract_path}, exiting...')
                 exit()
@@ -220,7 +219,8 @@ class ArchiveFile:
                 if continuity_check in str(extract_path):
                     pass
                 else:
-                    print(f'Continuity Check Fail: {continuity_check} failed for extract path {extract_path}, exiting...')
+                    print(
+                        f'Continuity Check Fail: {continuity_check} failed for extract path {extract_path}, exiting...')
                     exit()
             exist_one_parent = False
             for parent in extract_path.parents:
@@ -243,28 +243,32 @@ class ArchiveFile:
                 for i in range(self.file_list.__len__()):
                     rarfile.RarFile(self.full_file_path).extractall(path=extract_path, members=[str(self.file_list[i])],
                                                                     pwd=None)
+
                     new_path = os.path.join(extract_path, self.file_list[i])
                     if os.path.isfile(new_path):
-                        shutil.move(new_path, str(extract_path_bkup) + "\\" + pathlib.Path(
-                            new_path).name)  # move files to top dir
+                        shutil.move(new_path, os.path.join(str(extract_path_bkup),pathlib.Path(new_path).name))  # move files to top dir
             elif zipfile.is_zipfile(self.full_file_path):
                 for i in range(self.file_list.__len__()):
-                    zipfile.ZipFile(self.full_file_path, "r").extractall(path=extract_path, members=[str(self.file_list[i])],
+                    zipfile.ZipFile(self.full_file_path, "r").extractall(path=extract_path,
+                                                                         members=[str(self.file_list[i])],
                                                                          pwd=None)
                     new_path = os.path.join(extract_path, self.file_list[i])
                     if os.path.isfile(new_path):
-                        shutil.move(new_path, str(extract_path_bkup) + "\\" + pathlib.Path(
-                            new_path).name)  # move files to top dir
+                        shutil.move(new_path, os.path.join(str(extract_path_bkup), pathlib.Path(new_path).name))  # move files to top dir
             elif py7zr.is_7zfile(self.full_file_path):
                 for i in range(self.file_list.__len__()):
-                    py7zr.SevenZipFile(self.full_file_path, "r").extract(path=extract_path, targets=[str(self.file_list[i])])
+                    py7zr.SevenZipFile(self.full_file_path, "r").extract(path=extract_path,
+                                                                         targets=[str(self.file_list[i])])
                     new_path = os.path.join(extract_path, self.file_list[i])
+                    print(new_path)
+
                     if os.path.isfile(new_path):
-                        shutil.move(new_path, str(extract_path_bkup) + "\\" + pathlib.Path(
-                            new_path).name)  # move files to top dir
+                        shutil.move(new_path, os.path.join(str(extract_path_bkup), pathlib.Path(new_path).name))  # move files to top dir
+
             elif check_if_gz_file(self.full_file_path):
                 with gzip.open(self.full_file_path, 'rb') as f_in:
-                    with open(str(extract_path) + "\\" + self.file_name, 'wb') as f_out:
+
+                    with open(os.path.join(str(extract_path), self.file_name), 'wb') as f_out:
                         shutil.copyfileobj(f_in, f_out)
             self.read_contents()
             for f in self.file_list:
@@ -284,7 +288,7 @@ class ArchiveFile:
                 py7zr.SevenZipFile(self.full_file_path, "r").extract(path=extract_path, targets=self.file_list[i])
         elif check_if_gz_file(self.full_file_path):
             with gzip.open(self.full_file_path, 'rb') as f_in:
-                with open(str(extract_path) + "\\" + self.file_name, 'wb') as f_out:
+                with open(os.path.join(str(extract_path), self.file_name), 'wb') as f_out:
                     shutil.copyfileobj(f_in, f_out)
 
         return extract_path_bkup
@@ -303,11 +307,13 @@ def setup_parser():
                                                    "the directory of the archive")
     extract_group_exclusive = extract.add_mutually_exclusive_group()
 
-    extract_group_exclusive.add_argument('-d', '--destination', type=str, help="move file to specified location, if only a name is "
-                                                               "given then to a folder relative to archive location")
-    extract_group_exclusive.add_argument('-cd', '--current_dir', action='store_true', help="extract to current directory")
+    extract_group_exclusive.add_argument('-d', '--destination', type=str,
+                                         help="move file to specified location, if only a name is "
+                                              "given then to a folder relative to archive location")
+    extract_group_exclusive.add_argument('-cd', '--current_dir', action='store_true',
+                                         help="extract to current directory")
 
-    extract.add_argument('-con', '--continuity_check', type=str, help="move all files to a directory")
+    extract.add_argument('-cc', '--continuity_check', type=str, help="move all files to a directory")
     extract.add_argument('-fo', '--only_files', action='store_true', help="automatically files only to "
                                                                           "extract directory")
     extract.add_argument('-del', '--delete_archive', action='store_true',
@@ -337,10 +343,13 @@ def setup_parser():
 
 if __name__ == "__main__":
     args = setup_parser()
+    prev_dir = os.getcwd()
     if args.command == "view":
         ArchiveFile(args.archive_path).read_contents(True, args.files, args.type, args.search, args.exclusive)
+        os.chdir(ArchiveFile.directory_path)
     elif args.command == "extract":
         archive = ArchiveFile(args.archive_path)
+        os.chdir(ArchiveFile.directory_path)
         destination_dir = ""
         if args.current_dir:
             destination_dir = None
@@ -355,8 +364,12 @@ if __name__ == "__main__":
 
         if args.delete_archive:
             os.remove(args.archive_path)
+        os.chdir(prev_dir)
     elif args.command == "move":
+        os.chdir(ArchiveFile.directory_path)
         pass
     else:
         print("Invalid command")
         exit()
+
+
