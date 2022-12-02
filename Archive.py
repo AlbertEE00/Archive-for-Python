@@ -31,6 +31,16 @@ import py7zr
 import rarfile
 
 
+def check_if_gz_file(filepath: str | pathlib.Path) -> bool:
+    GZIP_MAGIC_NUMBER = "31139"
+    f = open(filepath, mode='rb')
+    first_two = f.read(2)
+    if str(first_two[0]) + str(first_two[1]) == GZIP_MAGIC_NUMBER:
+        return True
+    else:
+        return False
+
+
 def get_file_name(filepath: str | pathlib.Path, ext: bool = False) -> str:
     """
     Returns the name of the file with or without extension.
@@ -49,7 +59,7 @@ def get_file_name(filepath: str | pathlib.Path, ext: bool = False) -> str:
     return str(os.path.splitext(os.path.basename((os.path.abspath(filepath))))[0])
 
 
-def get_file_extension(filepath: str | pathlib.Path) -> str:
+def get_file_extension(filepath: str) -> str:
     """
     Returns the extension of the file.
 
@@ -59,7 +69,11 @@ def get_file_extension(filepath: str | pathlib.Path) -> str:
     Returns:
         str: extension of file.
     """
-    return pathlib.Path((os.path.abspath(filepath))).suffix
+    if str(filepath).split(".").pop() == "gz":
+        filename = str(filepath).replace(".gz", "")
+        return "." + filename.split(".").pop()
+    else:
+        return pathlib.Path(str(filepath)).suffix
 
 
 def get_file_directory(filepath: str | pathlib.Path) -> pathlib.Path:
@@ -79,33 +93,25 @@ def get_file_directory(filepath: str | pathlib.Path) -> pathlib.Path:
         return os.path.abspath(filepath)
 
 
-def check_if_gz_file(filepath: str | pathlib.Path) -> bool:
-    GZIP_MAGIC_NUMBER = "31139"
-    f = open(filepath, mode='rb')
-    first_two = f.read(2)
-    if str(first_two[0]) + str(first_two[1]) == GZIP_MAGIC_NUMBER:
-        return True
-    else:
-        return False
-
-
 class ArchiveFile:
     full_file_path = pathlib.Path()
     directory_path = pathlib.Path()
     file_name = str()
     full_file_name = str()
     file_extension = str()
+    archive_extension = str()
+    gz_file_extension = str()
     file_list = list()
     __initState = False
 
     def __init__(self, file_path):
-        file_path.replace("/", "\\")
         if os.path.exists(os.path.abspath(file_path)):
             self.full_file_path = pathlib.Path(os.path.abspath(file_path))  # get full file path
             self.directory_path = self.full_file_path.parent.absolute()
             self.file_name = self.full_file_path.with_suffix("").name
             self.full_file_name = self.full_file_path.name
-            self.file_extension = self.full_file_path.suffix
+            self.archive_extension = self.full_file_path.suffix
+            self.file_extension = get_file_extension(self.full_file_path)
             self.__initState = True
         else:
             print("Invalid File Path: exiting...")
@@ -114,7 +120,8 @@ class ArchiveFile:
 
     def read_contents(self, print_files: bool = False, files: List[str] | None = None,
                       file_types: List[str] | None = None,
-                      pattern: List[str] | None = None, exclusive: bool = False):
+                      pattern: List[str] | None = None, exclude_pattern: List[str] | None = None,
+                      exclusive: bool = False):
         if not self.__initState:
             return "Archive not initialized"
         if rarfile.is_rarfile(self.full_file_path):
@@ -131,27 +138,13 @@ class ArchiveFile:
             self.file_list = [self.file_name]
 
         new_list = list()
-        if file_types or pattern or files:
+        if file_types or pattern or files or exclude_pattern:
             for file in self.file_list:
                 append = False
                 if file_types:
                     for f_type in file_types:
                         if f_type in get_file_extension(file):
                             append = True
-                if pattern:
-                    if exclusive:
-                        for search in pattern:
-                            res = re.findall(search, file)
-                            if res:
-                                pass
-                            else:
-                                append = False
-                                break
-                    else:
-                        for search in pattern:
-                            res = re.findall(search, file)
-                            if res:
-                                append = True
                 if files:
                     if exclusive:
                         for file_name in files:
@@ -166,8 +159,29 @@ class ArchiveFile:
                             res = re.findall(file_name, file)
                             if res:
                                 append = True
+                if pattern:
+                    if exclusive:
+                        for search in pattern:
+                            res = re.findall(search, file)
+                            if res:
+                                pass
+                            else:
+                                append = False
+                                break
+                    else:
+                        for search in pattern:
+                            res = re.findall(search, file)
+                            if res:
+                                append = True
+                if exclude_pattern:
+                    for exclude_search in exclude_pattern:
+                        res = re.findall(exclude_search, file)
+                        if res:
+                            append = False
+                            break
                 if append:
                     new_list.append(file)
+
             self.file_list = new_list
         if print_files:
             for ffile in self.file_list:
@@ -176,12 +190,12 @@ class ArchiveFile:
 
     def extract(self, extract_path: str = None, files_only: bool = False, continuity_check: str = None,
                 files: List[str] | None = None, file_types: List[str] | None = None,
-                pattern: List[str] | None = None, exclusive: bool = False):
+                pattern: List[str] | None = None, exclude_pattern: List[str] | None = None, exclusive: bool = False):
         if not self.__initState:
             return "Archive not initialized"
         # print(f'this is before: {extract_path}')
+
         if extract_path is not None:
-            extract_path.replace("/", "\\")
             if r'\\' in extract_path:
                 print(f'Invalid Extract Path: {extract_path}, exiting...')
                 exit()
@@ -194,9 +208,14 @@ class ArchiveFile:
             extract_path = pathlib.Path(
                 os.path.abspath(extract_path)) if extract_path else self.directory_path  # make a full path and
 
-        self.read_contents(print_files=False, files=files, file_types=file_types, pattern=pattern, exclusive=exclusive)
+        self.read_contents(print_files=False, files=files, file_types=file_types, pattern=pattern,
+                           exclude_pattern=exclude_pattern, exclusive=exclusive)
+
         if self.file_list.__len__() == 0:
             print(f'Criteria Mismatch: No files to extract from {self.full_file_path} for criteria:')
+            if exclusive:
+                print()
+                print(f'Exclusive set to {exclusive}')
             if files:
                 print()
                 print('Files:')
@@ -212,6 +231,11 @@ class ArchiveFile:
                 print('Search Pattern:')
                 for p in pattern:
                     print(p)
+            if exclude_pattern:
+                print()
+                print('Exclusive Pattern:')
+                for p in exclude_pattern:
+                    print(p)
             print()
             print("Exiting...")
             exit()
@@ -220,7 +244,8 @@ class ArchiveFile:
                 if continuity_check in str(extract_path):
                     pass
                 else:
-                    print(f'Continuity Check Fail: {continuity_check} failed for extract path {extract_path}, exiting...')
+                    print(
+                        f'Continuity Check Fail: {continuity_check} failed for extract path {extract_path}, exiting...')
                     exit()
             exist_one_parent = False
             for parent in extract_path.parents:
@@ -243,28 +268,35 @@ class ArchiveFile:
                 for i in range(self.file_list.__len__()):
                     rarfile.RarFile(self.full_file_path).extractall(path=extract_path, members=[str(self.file_list[i])],
                                                                     pwd=None)
+
                     new_path = os.path.join(extract_path, self.file_list[i])
                     if os.path.isfile(new_path):
-                        shutil.move(new_path, str(extract_path_bkup) + "\\" + pathlib.Path(
-                            new_path).name)  # move files to top dir
+                        shutil.move(new_path, os.path.join(str(extract_path_bkup),
+                                                           pathlib.Path(new_path).name))  # move files to top dir
             elif zipfile.is_zipfile(self.full_file_path):
                 for i in range(self.file_list.__len__()):
-                    zipfile.ZipFile(self.full_file_path, "r").extractall(path=extract_path, members=[str(self.file_list[i])],
+                    zipfile.ZipFile(self.full_file_path, "r").extractall(path=extract_path,
+                                                                         members=[str(self.file_list[i])],
                                                                          pwd=None)
                     new_path = os.path.join(extract_path, self.file_list[i])
                     if os.path.isfile(new_path):
-                        shutil.move(new_path, str(extract_path_bkup) + "\\" + pathlib.Path(
-                            new_path).name)  # move files to top dir
+                        shutil.move(new_path, os.path.join(str(extract_path_bkup),
+                                                           pathlib.Path(new_path).name))  # move files to top dir
             elif py7zr.is_7zfile(self.full_file_path):
                 for i in range(self.file_list.__len__()):
-                    py7zr.SevenZipFile(self.full_file_path, "r").extract(path=extract_path, targets=[str(self.file_list[i])])
+                    py7zr.SevenZipFile(self.full_file_path, "r").extract(path=extract_path,
+                                                                         targets=[str(self.file_list[i])])
                     new_path = os.path.join(extract_path, self.file_list[i])
+                    print(new_path)
+
                     if os.path.isfile(new_path):
-                        shutil.move(new_path, str(extract_path_bkup) + "\\" + pathlib.Path(
-                            new_path).name)  # move files to top dir
+                        shutil.move(new_path, os.path.join(str(extract_path_bkup),
+                                                           pathlib.Path(new_path).name))  # move files to top dir
+
             elif check_if_gz_file(self.full_file_path):
                 with gzip.open(self.full_file_path, 'rb') as f_in:
-                    with open(str(extract_path) + "\\" + self.file_name, 'wb') as f_out:
+
+                    with open(os.path.join(str(extract_path), self.file_name), 'wb') as f_out:
                         shutil.copyfileobj(f_in, f_out)
             self.read_contents()
             for f in self.file_list:
@@ -281,12 +313,12 @@ class ArchiveFile:
                 zipper.extractall(path=extract_path, members=self.file_list, pwd=None)
         elif py7zr.is_7zfile(self.full_file_path):
             for i in range(self.file_list.__len__()):
-                py7zr.SevenZipFile(self.full_file_path, "r").extract(path=extract_path, targets=self.file_list[i])
+                py7zr.SevenZipFile(self.full_file_path, "r", password=None).extract(path=extract_path,
+                                                                                    targets=self.file_list[i])
         elif check_if_gz_file(self.full_file_path):
             with gzip.open(self.full_file_path, 'rb') as f_in:
-                with open(str(extract_path) + "\\" + self.file_name, 'wb') as f_out:
+                with open(os.path.join(str(extract_path), self.file_name), 'wb') as f_out:
                     shutil.copyfileobj(f_in, f_out)
-
         return extract_path_bkup
 
 
@@ -303,11 +335,13 @@ def setup_parser():
                                                    "the directory of the archive")
     extract_group_exclusive = extract.add_mutually_exclusive_group()
 
-    extract_group_exclusive.add_argument('-d', '--destination', type=str, help="move file to specified location, if only a name is "
-                                                               "given then to a folder relative to archive location")
-    extract_group_exclusive.add_argument('-cd', '--current_dir', action='store_true', help="extract to current directory")
+    extract_group_exclusive.add_argument('-d', '--destination', type=str,
+                                         help="move file to specified location, if only a name is "
+                                              "given then to a folder relative to archive location")
+    extract_group_exclusive.add_argument('-cd', '--current_dir', action='store_true',
+                                         help="extract to current directory")
 
-    extract.add_argument('-con', '--continuity_check', type=str, help="move all files to a directory")
+    extract.add_argument('-cc', '--continuity_check', type=str, help="move all files to a directory")
     extract.add_argument('-fo', '--only_files', action='store_true', help="automatically files only to "
                                                                           "extract directory")
     extract.add_argument('-del', '--delete_archive', action='store_true',
@@ -319,6 +353,8 @@ def setup_parser():
     extract.add_argument('-s', '--search', action='append', help="extract only matches to search specified, appended "
                                                                  "with each "
                                                                  "-s")
+    extract.add_argument('-xs', '--exclude_search', action='append', help="extract only matches to search specified, "
+                                                                          "appended with each -xs")
 
     move = subparser.add_parser('move', help="move archive to specified location")
     move.add_argument('destination', type=str, nargs='+', help="move file(s) to specified destination path, if only a "
@@ -331,16 +367,21 @@ def setup_parser():
     view.add_argument('-s', '--search', action='append',
                       help="view only matches to search specified, appended with each "
                            "-s")
-
+    view.add_argument('-xs', '--exclude_search', action='append', help="extract only matches to search specified, "
+                                                                       "appended with each -xs")
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = setup_parser()
+    prev_dir = os.getcwd()
     if args.command == "view":
-        ArchiveFile(args.archive_path).read_contents(True, args.files, args.type, args.search, args.exclusive)
+        ArchiveFile(args.archive_path).read_contents(True, files=args.files, file_types=args.type, pattern=args.search,
+                                                     exclude_pattern=args.exclude_search, exclusive=args.exclusive)
+        os.chdir(ArchiveFile.directory_path)
     elif args.command == "extract":
         archive = ArchiveFile(args.archive_path)
+        os.chdir(ArchiveFile.directory_path)
         destination_dir = ""
         if args.current_dir:
             destination_dir = None
@@ -350,12 +391,14 @@ if __name__ == "__main__":
             destination_dir = ""
         temp_des_dir = destination_dir
         final_path = archive.extract(extract_path=destination_dir, files_only=args.only_files, files=args.files,
-                                     file_types=args.type, pattern=args.search, exclusive=args.exclusive,
-                                     continuity_check=args.continuity_check)
+                                     file_types=args.type, pattern=args.search, exclude_pattern=args.exclude_search,
+                                     exclusive=args.exclusive, continuity_check=args.continuity_check)
 
         if args.delete_archive:
             os.remove(args.archive_path)
+        os.chdir(prev_dir)
     elif args.command == "move":
+        os.chdir(ArchiveFile.directory_path)
         pass
     else:
         print("Invalid command")
